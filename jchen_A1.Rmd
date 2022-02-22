@@ -1,0 +1,367 @@
+---
+title: 'Assignment 1: Data set selection and initial Processing'
+author: "Jeffrey Chen"
+date: "23 February 2022"
+output:
+  html_document:
+    df_print: paged
+  html_notebook:
+    df_print: paged
+---
+
+## My Data Set  
+I picked the data set 
+
+## Downloading the Packages/Data
+First, I am downloading any packages that I will need to work
+on the data set, and load it into the library.
+```{r}
+# Installing packages if they are not installed
+if (!requireNamespace("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+
+if (!requireNamespace("GEOmetadb", quietly = TRUE))
+  BiocManager::install("GEOmetadb")
+
+if (!requireNamespace("edgeR", quietly = TRUE))
+  BiocManager::install("edgeR")
+
+if (!requireNamespace("GEOquery", quietly = TRUE))
+    BiocManager::install("GEOquery")
+
+if (!requireNamespace("biomaRt", quietly = TRUE))
+  install.packages("knitr")
+
+if (!requireNamespace("knitr", quietly = TRUE))
+  install.packages("knitr")
+
+BiocManager::install("SeqGSEA")
+# Importing packages
+library(SeqGSEA)
+library(BiocManager)
+library(GEOmetadb)
+library(edgeR)
+library(GEOquery)
+library(knitr)
+library(biomaRt)
+```
+
+## Getting the file using GEOmetadb. I am getting the expression data 
+```{r}
+# Getting the expression data for GSE196464
+supp_files = getGEOSuppFiles('GSE196464')
+gse196464 <- getGEO("GSE196464",GSEMatrix=FALSE)
+```
+
+## Here I retrieve information for the data set
+```{r}
+# Getting info for GSE196464
+GSE196464_gpl_info <- Meta(getGEO(names(GPLList(gse196464))[1]))
+```
+
+
+Here's a brief GEO description of the data set
+```{r}
+data.frame(head(Meta(gse196464)))
+```
+
+## Getting more info about platform
+
+```{r include=FALSE}
+current_gpl <- names(GPLList(gse196464))[1]
+current_gpl_info <- Meta(getGEO(current_gpl))
+current_gpl_info$title
+current_gpl_info$last_update_date
+current_gpl_info$organism
+```
+**Platform Title:** `r current_gpl_info$title`  
+**Last Update Data::** `r current_gpl_info$last_update_date`  
+**Organims:** `r current_gpl_info$organism`  
+
+## Grabbing the expression data from the data set
+```{r}
+fnames = rownames(supp_files)
+cov_19  <- read.csv(fnames[1],header=TRUE, check.names = FALSE)
+colnames(cov_19)[1] <- "hgnc_symbol" #named this for later purposes e.g. merge
+
+raw_samples_names <- unname(
+    unlist(data.frame(strsplit(colnames(cov_19)[2: length(colnames(cov_19))], 
+                               "/")))[c(TRUE, FALSE)])
+colnames(cov_19)[2: ncol(cov_19)] <- raw_samples_names
+colnames(cov_19)
+kable(cov_19[1:15,1:18], type = "html")
+```
+
+## Cleaning Data
+How many genes do we have measurements for?
+```{r}
+dim(cov_19)
+summarized_gene_counts <- sort(table(cov_19$gname),
+                               decreasing = TRUE)
+kable(summarized_gene_counts[which(summarized_gene_counts>1)], format="html")
+```
+
+Here we see that there are only 2 genes that are replicated.  
+Do I need to filter them out?  
+The difference of 2 genes being filtered out of 33551 practically won't matter, 
+so the answer will be no.  
+There are also no duplicated genes, as we can see from the that the rest of the
+genes all appear once.
+
+## Filtering out low counts
+```{r}
+cpms = cpm(cov_19[,2:19])
+rownames(cpms) <- cov_19[,1]
+# get rid of low counts
+keep = rowSums(cpms >1) >= 3
+cov_19_filtered = cov_19[keep,]
+dim(cov_19_filtered)
+```
+
+In this step we have filtered our set from 33551 to 16131.
+
+
+## Box plot
+```{r}
+data2plot <- log2(cpm(cov_19_filtered[, 2: ncol(cov_19_filtered)]))
+boxplot(data2plot, 
+        xlab = "Samples", 
+        ylab = "log2 CPM", 
+        las = 2, 
+        cex = 0.3, 
+        cex.lab = 0.3,
+        cex.axis = 0.5, 
+        main = "Replicate Well SARS-CoV-2 Samples")
+#draw the median on each box plot
+abline(h = median(apply(data2plot, 2, median)), 
+       col = "green", lwd = 0.6, lty = "dashed")
+```
+
+## Density Plot
+```{r}
+counts_density <- 
+  apply(log2(cpm(cov_19_filtered[, 2:length(colnames(cov_19_filtered))])),
+        2, density)
+ #calculate the limits across all the samples
+xlim <- 0; ylim <- 0
+for (i in 1:length(counts_density)) {
+  xlim <- range(c(xlim, counts_density[[i]]$x)); 
+  ylim <- range(c(ylim, counts_density[[i]]$y))
+}
+ cols <- rainbow(length(counts_density))
+ ltys <- rep(1, length(counts_density))
+ 
+ #plot the first density plot to initialize the plot
+ plot(counts_density[[1]], 
+      xlim=xlim, 
+      ylim=ylim, 
+      type="n", 
+      ylab="Smoothing density of log2-CPM", 
+      main="Density Plot before Normalization", 
+      cex.lab = 0.8)
+ 
+ #plot each line
+ for (i in 1:length(counts_density)) {
+   lines(counts_density[[i]], 
+         col = cols[i], 
+         lty = ltys[i])
+ }
+   
+ #create legend
+ legend("topright", colnames(data2plot), 
+ col=cols, lty=ltys, cex=0.6, 
+ border ="blue", text.col = "green4", 
+ merge = TRUE, bg = "gray90")
+```
+
+
+## Regrouping geenes based on cell_types
+```{r}
+# Group them based on different cell types
+cell_type <- unlist(strsplit(raw_samples_names, "_"))[c(FALSE, TRUE, FALSE)]
+samples <- data.frame(cell_type = cell_type)
+```
+
+## Mapping the symbols
+
+```{r}
+cov_19_ensemble <- convertSymbol2Ensembl(cov_19_filtered$hgnc_symbol)
+cov19_merge <- merge(cov_19_ensemble, cov_19_filtered, by = "hgnc_symbol")
+httr::set_config(httr::config(ssl_verifypeer = FALSE)) # sometimes code bellow runs error, this line solves it
+ensembl <- useMart("ensembl")
+datasets <- listDatasets(ensembl)
+ensembl <- useDataset("hsapiens_gene_ensembl", mart = ensembl)
+```
+
+## RDS File
+```{r}
+conversion_stash <- "./cov19_id_conversion.rds"
+if (file.exists(conversion_stash)) {
+  cov19_id_conversion <- readRDS(conversion_stash)
+} else {
+  fcol <- c(cov19_merge[,2])
+  scol <- c(cov19_merge[,1])
+  cov19_id_conversion <- data.frame(fcol, scol)
+  colnames(cov19_id_conversion)[1] <- "ensembl_gene_id"
+  colnames(cov19_id_conversion)[2] <- "hgnc_symbol"
+  saveRDS(cov19_en_hgnc, conversion_stash)
+}
+```
+
+For some reason, getBM function was not working so I created and used 
+convertSymbol2Ensembl and merged the two dataframes to get the conversion I 
+needed.
+
+
+## Merge new identifiers
+```{r}
+cov_19_filtered_annot <- merge(cov19_id_conversion, 
+                                 cov19_merge, 
+                                 by.x = 1, 
+                                 by.y = 1, 
+                                 all.y=TRUE)
+kable(cov_19_filtered_annot[1:30,], type = "html")
+
+```
+The hgnc_symbol column that is full of NA is dealt with later.
+
+
+## Check and deal with missing identifiers
+There should be no missing identifiers as the convertSymbol2Ensembl function I 
+used earlier has already converted all the ones that have identifiers, and I 
+have merged the data accordingly.
+
+
+## Check duplicated mapping
+```{r}
+summarized_mapping_counts <- sort(table(cov_19_filtered_annot$hgnc_symbol), 
+                                  decreasing = TRUE)
+head(summarized_mapping_counts)
+summarized_mapping_counts_2 <- sort(table(
+  cov_19_filtered_annot$ensembl_gene_id), decreasing = TRUE)
+head(summarized_mapping_counts_2)
+```
+
+
+## Applying TMM
+```{r}
+filtered_data_matrix <- as.matrix(cov_19_filtered_annot[,4: 12])
+rownames(filtered_data_matrix) <- cov_19_filtered_annot$hgnc_symbol
+d = DGEList(counts = filtered_data_matrix, group = samples$cell_type)
+d = calcNormFactors(d) 
+normalized_counts <- cpm(d)
+kable(normalized_counts[1: 10, ], type = "html")
+nrow(normalized_counts)
+```
+
+## MDS plot
+```{r}
+plotMDS(d, labels=rownames(samples),
+ col = c("darkgreen","blue")[factor(samples$cell_type)], cex = 0.6)
+```
+
+```{r}
+# density plot after normalized by defined groups
+counts_density <- apply(log2(normalized_counts), 2, density)
+xlim <- 0; ylim <- 0
+for (i in 1:length(counts_density)) {
+  xlim <- range(c(xlim, counts_density[[i]]$x)); 
+  ylim <- range(c(ylim, counts_density[[i]]$y))
+}
+ cols <- rainbow(length(counts_density))
+ ltys <- rep(1, length(counts_density))
+ 
+ #plot the first density plot to initialize the plot
+ plot(counts_density[[1]], 
+      xlim=xlim, 
+      ylim=ylim, 
+      type="n", 
+      ylab="Smoothing density of log2-CPM", 
+      main="Density Plot after Normalization", 
+      cex.lab = 0.8)
+ #plot each line
+ for (i in 1:length(counts_density)) {
+   lines(counts_density[[i]], 
+         col = cols[i], 
+         lty = ltys[i])
+ }
+   
+ #create legend
+ legend("topright", colnames(data2plot), 
+        col=cols, lty=ltys, cex=0.5, 
+        border ="blue", text.col = "green4", 
+        merge = TRUE, bg = "gray90")
+```
+## Dispersion
+```{r}
+#model_design <- model.matrix(~samples$cell_type+0)
+#d <- estimateDisp(d, model_design)
+```
+
+```{r}
+#plotBCV(d,col.tagwise = "black",col.common = "red")
+```
+
+```{r}
+#plotMeanVar(d, show.raw.vars = TRUE, 
+#            show.tagwise.vars=TRUE, 
+#            show.ave.raw.vars = TRUE, 
+#            NBline=TRUE,
+#            show.binned.common.disp.vars = TRUE)
+```
+
+I was unable to figure out why dispersion was not working, thus the BCV and mean
+variance plot were unsuccessful.
+
+
+## Intepretation
+**What are the control and test conditions of the dataset?**  
+The controls of the data set were the BU3 NGPT Mock 1 DPI replicates, BU3 NGPT Mock 3 DPI replicates,
+and the 1566 Mock 1 DPI replicates. The test conditions were where the replicates were 
+infected with SARS-CoV-2.
+
+**Why is the dataset of interest to you?**  
+This data set is interesting to me as it is quite relevant to recent times, 
+and if studied further, we may be able to potentially what genes are causing people 
+to be asymptomatic or not. 
+
+**Were there expression values that were not unique for specific genes? How did you handle these?**  
+There were only two expressions that were not unique, I let them be because the difference of 2 genes being filtered out of 33551 practically won't matter.
+
+**Were there expression values that could not be mapped to current HUGO symbols?**  
+Yes, but I removed the using the convertSymbol2Ensembl and merged/joined the associated data.
+
+**How many outliers were removed?**  
+There were none
+
+**How did you handle replicates?**  
+There were no replicates.
+
+**What is the final coverage of your dataset?**  
+There were 33551 at the start and ended with 15295
+
+
+## Final Result
+```{r}
+final_result <- cov_19_filtered_annot[,2:ncol(cov_19_filtered_annot)]
+head(final_result)
+```
+
+## References
+Huang, J., Hume, A. J., Abo, K. M., Werder, R. B., Villacorta-Martin, C., Alysandratos, K.-D., Beermann, M. L., Simone-Roach, C., Lindstrom-Vautrin, J., Olejnik, J., Suder, E. L., Bullitt, E., Hinds, A., Sharma, A., Bosmann, M., Wang, R., Hawkins, F., Burks, E. J., Saeed, M., … Kotton, D. N. (2020, August 6). SARS-COV-2 infection of pluripotent stem cell-derived human lung alveolar type 2 cells elicits a rapid epithelial-intrinsic inflammatory response. bioRxiv : the preprint server for biology. Retrieved February 21, 2022, from https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7337394.1/ 
+
+Robinson MD, McCarthy DJ and Smyth GK , 2010. edgeR: a Bioconductor package for differential expression analysis of digital gene expression data.
+  Bioinformatics 26, 139-140
+  
+Wang X, Cairns MJ (2013). “Gene Set Enrichment Analysis of RNA-Seq Data: Integrating Differential Expression and Splicing.” BMC Bioinformatics, 14(Suppl 5), S16.
+
+Wang X, Cairns MJ (2014). “SeqGSEA: a Bioconductor package for gene set enrichment analysis of RNA-Seq data integrating differential expression and splicing.” Bioinformatics, 30(12), 1777-9.
+
+Davis, S. and Meltzer, P. S, 2007, GEOquery: a bridge between the Gene Expression Omnibus (GEO) and BioConductor. Bioinformatics, 14, 1846-1847
+
+Steffen Durinck, Paul T. Spellman, Ewan Birney and
+  Wolfgang Huber. 2009 Mapping identifiers for the integration of genomic datasets with the R/Bioconductor package biomaRt. , Nature Protocols 4, 1184-1191.
+
+Xie Y (2014). “knitr: A Comprehensive Tool for Reproducible Research in R.” In Stodden V, Leisch F, Peng RD (eds.), Implementing Reproducible Computational Research. Chapman and Hall/CRC. ISBN 978-1466561595, http://www.crcpress.com/product/isbn/9781466561595.
+
+Zhu Y, Davis S, Stephens R, Meltzer PS, Chen Y (2008). “GEOmetadb: powerful alternative search engine for the Gene Expression Omnibus.” Bioinformatics (Oxford, England), 24(23), 2798–2800. ISSN 1367-4811, doi: 10.1093/bioinformatics/btn520, http://www.ncbi.nlm.nih.gov/pubmed/18842599.
