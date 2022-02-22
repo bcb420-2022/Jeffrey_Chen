@@ -204,7 +204,7 @@ if (file.exists(conversion_stash)) {
   cov19_id_conversion <- data.frame(fcol, scol)
   colnames(cov19_id_conversion)[1] <- "ensembl_gene_id"
   colnames(cov19_id_conversion)[2] <- "hgnc_symbol"
-  saveRDS(cov19_en_hgnc, conversion_stash)
+  saveRDS(cov19_id_conversion, conversion_stash)
 }
 ```
 
@@ -344,8 +344,12 @@ There were 33551 at the start and ended with 15295
 ## Final Result
 ```{r}
 final_result <- cov_19_filtered_annot[,2:ncol(cov_19_filtered_annot)]
-head(final_result)
-```
+colnames(final_result)[1] <- "hgnc_symbol" 
+kable(final_result[1:10, ], type = "html")
+``` 
+
+The symbols of the first column don't show in the .html file but do when I run the chunk of code.
+Couldn't find a way to fix it.
 
 ## References
 Huang, J., Hume, A. J., Abo, K. M., Werder, R. B., Villacorta-Martin, C., Alysandratos, K.-D., Beermann, M. L., Simone-Roach, C., Lindstrom-Vautrin, J., Olejnik, J., Suder, E. L., Bullitt, E., Hinds, A., Sharma, A., Bosmann, M., Wang, R., Hawkins, F., Burks, E. J., Saeed, M., … Kotton, D. N. (2020, August 6). SARS-COV-2 infection of pluripotent stem cell-derived human lung alveolar type 2 cells elicits a rapid epithelial-intrinsic inflammatory response. bioRxiv : the preprint server for biology. Retrieved February 21, 2022, from https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7337394.1/ 
