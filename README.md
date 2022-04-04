@@ -4,3 +4,5 @@ A1 Link (Raw): [https://github.com/bcb420-2022/Jeffrey_Chen/blob/main/jchen_A1.h
 A1 Link rendered: [https://htmlpreview.github.io/?https://github.com/bcb420-2022/Jeffrey_Chen/blob/main/jchen_A1.html]   
 A2 Link (Raw): [https://github.com/bcb420-2022/Jeffrey_Chen/blob/main/A2_Jeffrey_Chen.html]  
 A2 Link (rendered): [https://htmlpreview.github.io/?https://github.com/bcb420-2022/Jeffrey_Chen/blob/main/A2_Jeffrey_Chen.html]
+A3 Link (Raw): [https://github.com/bcb420-2022/Jeffrey_Chen/blob/main/A3_Jeffrey_Chen.html]    
+A3 Link (rendered): [https://htmlpreview.github.io/?https://github.com/bcb420-2022/Jeffrey_Chen/blob/main/A3_Jeffrey_Chen.html]
